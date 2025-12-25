@@ -174,6 +174,10 @@ The `f.req` structure:
 | `hT54vc` | User preferences | - |
 | `ZwVcOc` | Settings | - |
 | `ozz5Z` | Subscription info | - |
+| `Ljjv0c` | Start Fast Research | `[["query", source_type], null, 1, "notebook_id"]` |
+| `QA9ei` | Start Deep Research | `[null, [1], ["query", source_type], 5, "notebook_id"]` |
+| `e3bVqc` | Poll Research Results | `[null, null, "notebook_id"]` |
+| `LBwxtb` | Import Research Sources | `[null, [1], "task_id", "notebook_id", [sources]]` |
 
 ### Source Types (via `izAoDd` RPC)
 
@@ -250,6 +254,145 @@ Streaming JSON with multiple chunks:
 2. **Final answer** - Markdown formatted with citations
 3. **Source references** - Links to specific passages in sources
 
+### Research RPCs (Source Discovery)
+
+NotebookLM's "Research" feature discovers and suggests sources based on a query. It supports two source types (Web and Google Drive) and two research modes (Fast and Deep).
+
+#### Source Types
+| Type | Value | Description |
+|------|-------|-------------|
+| Web | `1` | Searches the public web for relevant sources |
+| Google Drive | `2` | Searches user's Google Drive for relevant documents |
+
+#### Research Modes
+| Mode | Description | Duration | Can Leave Page |
+|------|-------------|----------|----------------|
+| Fast Research | Quick search, ~10 sources | ~10-30 seconds | No |
+| Deep Research | Extended research with AI report, ~40+ sources | 3-5 minutes | Yes |
+
+#### `Ljjv0c` - Start Fast Research
+
+Initiates a Fast Research session for either Web or Drive sources.
+
+```python
+# Request params
+[["query", source_type], null, 1, "notebook_id"]
+
+# source_type: 1 = Web, 2 = Google Drive
+# Example (Web):  [["What is OpenShift", 1], null, 1, "549e31df-..."]
+# Example (Drive): [["sales strategy documents", 2], null, 1, "549e31df-..."]
+
+# Response
+["task_id"]
+# Example: ["6837228d-d832-4e5c-89d3-b9aa33ff7815"]
+```
+
+#### `QA9ei` - Start Deep Research (Web Only)
+
+Initiates a Deep Research session with extended web crawling and AI-generated report.
+
+```python
+# Request params
+[null, [1], ["query", source_type], 5, "notebook_id"]
+
+# The `5` indicates Deep Research mode
+# source_type: 1 = Web (Drive not supported for Deep Research)
+# Example: [null, [1], ["enterprise kubernetes trends 2025", 1], 5, "549e31df-..."]
+
+# Response
+["task_id", "report_id"]
+# Example: ["a02dd39b-94c0-443e-b9e4-9c15ab9016c5", null]
+```
+
+#### `e3bVqc` - Poll Research Results
+
+Polls for research completion and retrieves results. Call repeatedly until status = 2.
+
+```python
+# Request params
+[null, null, "notebook_id"]
+
+# Response structure (when completed)
+[[[
+  "task_id",
+  [
+    "notebook_id",
+    ["query", source_type],
+    research_mode,  # 1 = Fast, 5 = Deep
+    [
+      # Array of discovered sources
+      [
+        "url",           # Web URL or Drive URL
+        "title",         # Source title
+        "description",   # AI-generated description
+        result_type      # 1 = Web, 2 = Google Doc, 3 = Slides, 8 = Sheets
+      ],
+      # ... more sources
+    ],
+    "summary"  # AI-generated summary of sources
+  ],
+  status  # 1 = in progress, 2 = completed
+],
+[end_timestamp, nanos],
+[start_timestamp, nanos]
+]]
+
+# Deep Research also includes a report in the results (long markdown document)
+```
+
+**Result Types (in poll response):**
+| Type | Meaning |
+|------|---------|
+| 1 | Web URL |
+| 2 | Google Doc |
+| 3 | Google Slides |
+| 5 | Deep Research Report |
+| 8 | Google Sheets |
+
+#### `LBwxtb` - Import Research Sources
+
+Imports selected sources from research results into the notebook.
+
+```python
+# Request params
+[null, [1], "task_id", "notebook_id", [source1, source2, ...]]
+
+# Each source structure:
+# Web source:
+[null, null, ["url", "title"], null, null, null, null, null, null, null, 2]
+
+# Drive source:
+[["document_id", "mime_type", null, "title"], null, null, null, null, null, null, null, null, null, 1]
+
+# Response
+# Array of created source objects with source_id, title, metadata
+[[source_id, title, metadata, [null, 2]], ...]
+```
+
+#### Research Flow Summary
+
+```
+1. Start Research
+   ├── Fast: Ljjv0c with source_type (1=Web, 2=Drive)
+   └── Deep: QA9ei with mode=5 (Web only)
+
+2. Poll Results
+   └── e3bVqc → repeat until status=2
+
+3. Import Sources
+   └── LBwxtb with selected sources
+
+4. Sources appear in notebook → can query them
+```
+
+#### Important Notes
+
+- **Only one active research per notebook**: Starting a new research cancels any pending results
+- **Deep Research runs in background**: User can navigate away after initiation
+- **Fast Research blocks navigation**: Must stay on page until complete
+- **Drive URLs format**: `https://drive.google.com/a/redhat.com/open?id=<document_id>`
+- **Web URLs**: Standard HTTP/HTTPS URLs
+
 ### Key Findings
 
 1. **Filtering is client-side**: The `wXbhsf` RPC returns ALL notebooks. "My notebooks" vs "Shared with me" filtering happens in the browser.
@@ -261,6 +404,10 @@ Streaming JSON with multiple chunks:
 4. **Conversation support**: Pass a `conversation_id` for multi-turn conversations (follow-up questions).
 
 5. **Rate limits**: Free tier has ~50 queries/day limit.
+
+6. **Research uses same RPC for Web and Drive**: The `Ljjv0c` RPC handles both Web (source_type=1) and Drive (source_type=2) Fast Research. Only the source_type parameter differs.
+
+7. **Deep Research is Web-only**: The `QA9ei` RPC only supports Web sources (source_type=1). Google Drive does not have a Deep Research equivalent.
 
 ## MCP Tools Provided
 
@@ -297,7 +444,9 @@ Consumer NotebookLM has many more features than Enterprise. To explore:
 - [ ] **Data Tables** - Structured data extraction
 - [ ] **Reports** - Long-form reports
 - [ ] **Notes** - Save chat responses as notes
-- [ ] **Deep Research** - Extended web research
+- [x] **Fast Research (Web)** - Quick web source discovery (tools: `research_start`, `research_status`, `research_import`)
+- [x] **Fast Research (Drive)** - Quick Google Drive source discovery (tools: `research_start`, `research_status`, `research_import`)
+- [x] **Deep Research** - Extended web research with AI report (tools: `research_start`, `research_status`, `research_import`)
 - [x] **Delete notebook** - Remove notebooks (RPC: `WWINqb`)
 - [x] **Rename notebook** - Change notebook title (RPC: `s0tc2d`)
 - [ ] **Delete source** - Remove sources

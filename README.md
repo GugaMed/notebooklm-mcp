@@ -19,6 +19,9 @@ An MCP server for **Consumer NotebookLM** (notebooklm.google.com) - the free/per
 | `notebook_query` | Ask questions and get AI answers |
 | `source_list_drive` | List sources with freshness status |
 | `source_sync_drive` | Sync stale Drive sources (requires confirmation) |
+| `research_start` | Start Web or Drive research to discover sources |
+| `research_status` | Poll research progress with built-in wait |
+| `research_import` | Import discovered sources into notebook |
 | `save_auth_tokens` | Save cookies for authentication |
 
 ## Important Disclaimer
@@ -143,6 +146,39 @@ sources = source_list_drive(notebook_id)
 # Sync stale sources (after user confirmation)
 source_sync_drive(source_ids=["id1", "id2"], confirm=True)
 ```
+
+### Research and Import Sources
+```python
+# Start web research (fast mode, ~30 seconds)
+result = research_start(
+    query="value of ISVs on cloud marketplaces",
+    source="web",   # or "drive" for Google Drive
+    mode="fast",    # or "deep" for extended research (web only)
+    title="ISV Research"
+)
+notebook_id = result["notebook_id"]
+
+# Poll until complete (built-in wait, polls every 30s for up to 5 min)
+status = research_status(notebook_id)
+
+# Import all discovered sources
+research_import(
+    notebook_id=notebook_id,
+    task_id=status["research"]["task_id"]
+)
+
+# Or import specific sources by index
+research_import(
+    notebook_id=notebook_id,
+    task_id=status["research"]["task_id"],
+    source_indices=[0, 2, 5]  # Import only sources at indices 0, 2, and 5
+)
+```
+
+**Research Modes:**
+- `fast` + `web`: Quick web search, ~10 sources in ~30 seconds
+- `deep` + `web`: Extended research with AI report, ~40 sources in 3-5 minutes
+- `fast` + `drive`: Quick Google Drive search, ~10 sources in ~30 seconds
 
 ## Consumer vs Enterprise
 

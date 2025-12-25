@@ -121,6 +121,27 @@ class ConsumerNotebookLMClient:
     RPC_SUBSCRIPTION = "ozz5Z"
     RPC_SETTINGS = "ZwVcOc"
 
+    # Research RPCs (source discovery)
+    RPC_START_FAST_RESEARCH = "Ljjv0c"  # Start Fast Research (Web or Drive)
+    RPC_START_DEEP_RESEARCH = "QA9ei"   # Start Deep Research (Web only)
+    RPC_POLL_RESEARCH = "e3bVqc"        # Poll research results
+    RPC_IMPORT_RESEARCH = "LBwxtb"      # Import research sources
+
+    # Research source types
+    RESEARCH_SOURCE_WEB = 1
+    RESEARCH_SOURCE_DRIVE = 2
+
+    # Research modes
+    RESEARCH_MODE_FAST = 1
+    RESEARCH_MODE_DEEP = 5
+
+    # Research result types (from poll response)
+    RESULT_TYPE_WEB = 1
+    RESULT_TYPE_GOOGLE_DOC = 2
+    RESULT_TYPE_GOOGLE_SLIDES = 3
+    RESULT_TYPE_DEEP_REPORT = 5
+    RESULT_TYPE_GOOGLE_SHEETS = 8
+
     # Source type constants (from metadata position 4)
     # These represent the Google Workspace document type, NOT the source origin
     SOURCE_TYPE_GOOGLE_DOCS = 1           # Google Docs (Documents)
@@ -257,7 +278,7 @@ class ConsumerNotebookLMClient:
         params = {
             "rpcids": rpc_id,
             "source-path": source_path,
-            "bl": "boq_labs-tailwind-frontend_20251217.10_p0",  # Version string, may change
+            "bl": "boq_labs-tailwind-frontend_20251221.14_p0",  # Version string, may change
             "hl": "en",
             "rt": "c",
         }
@@ -879,7 +900,7 @@ class ConsumerNotebookLMClient:
 
         # Build URL
         url_params = {
-            "bl": "boq_labs-tailwind-frontend_20251217.10_p0",
+            "bl": "boq_labs-tailwind-frontend_20251221.14_p0",
             "hl": "en",
             "rt": "c",
         }
@@ -919,6 +940,289 @@ class ConsumerNotebookLMClient:
             "conversation_id": conversation_id,
             "raw_response": parsed,
         }
+
+    def start_research(
+        self,
+        notebook_id: str,
+        query: str,
+        source: str = "web",
+        mode: str = "fast",
+    ) -> dict | None:
+        """Start a research session to discover sources.
+
+        Args:
+            notebook_id: The notebook UUID
+            query: The search query
+            source: Source type - "web" or "drive"
+            mode: Research mode - "fast" (10 sources, ~30s) or "deep" (40+ sources, 3-5min, web only)
+
+        Returns:
+            Dict with task_id and research info, or None on failure
+
+        Raises:
+            ValueError: If invalid source/mode combination (deep + drive not supported)
+        """
+        # Validate inputs
+        source_lower = source.lower()
+        mode_lower = mode.lower()
+
+        if source_lower not in ("web", "drive"):
+            raise ValueError(f"Invalid source '{source}'. Use 'web' or 'drive'.")
+
+        if mode_lower not in ("fast", "deep"):
+            raise ValueError(f"Invalid mode '{mode}'. Use 'fast' or 'deep'.")
+
+        if mode_lower == "deep" and source_lower == "drive":
+            raise ValueError("Deep Research only supports Web sources. Use mode='fast' for Drive.")
+
+        # Map to internal constants
+        source_type = self.RESEARCH_SOURCE_WEB if source_lower == "web" else self.RESEARCH_SOURCE_DRIVE
+
+        client = self._get_client()
+
+        if mode_lower == "fast":
+            # Fast Research: Ljjv0c
+            # Params: [["query", source_type], null, 1, "notebook_id"]
+            params = [[query, source_type], None, 1, notebook_id]
+            rpc_id = self.RPC_START_FAST_RESEARCH
+        else:
+            # Deep Research: QA9ei
+            # Params: [null, [1], ["query", source_type], 5, "notebook_id"]
+            params = [None, [1], [query, source_type], 5, notebook_id]
+            rpc_id = self.RPC_START_DEEP_RESEARCH
+
+        body = self._build_request_body(rpc_id, params)
+        url = self._build_url(rpc_id, f"/notebook/{notebook_id}")
+
+        response = client.post(url, content=body)
+        response.raise_for_status()
+
+        parsed = self._parse_response(response.text)
+        result = self._extract_rpc_result(parsed, rpc_id)
+
+        if result and isinstance(result, list) and len(result) > 0:
+            task_id = result[0]
+            report_id = result[1] if len(result) > 1 else None
+
+            return {
+                "task_id": task_id,
+                "report_id": report_id,
+                "notebook_id": notebook_id,
+                "query": query,
+                "source": source_lower,
+                "mode": mode_lower,
+            }
+        return None
+
+    def poll_research(self, notebook_id: str) -> dict | None:
+        """Poll for research results.
+
+        Call this repeatedly until status is "completed".
+
+        Args:
+            notebook_id: The notebook UUID
+
+        Returns:
+            Dict with status, sources, and summary when complete
+        """
+        client = self._get_client()
+
+        # Poll params: [null, null, "notebook_id"]
+        params = [None, None, notebook_id]
+        body = self._build_request_body(self.RPC_POLL_RESEARCH, params)
+        url = self._build_url(self.RPC_POLL_RESEARCH, f"/notebook/{notebook_id}")
+
+        response = client.post(url, content=body)
+        response.raise_for_status()
+
+        parsed = self._parse_response(response.text)
+        result = self._extract_rpc_result(parsed, self.RPC_POLL_RESEARCH)
+
+        if not result or not isinstance(result, list) or len(result) == 0:
+            return {"status": "no_research", "message": "No active research found"}
+
+        # Result structure: [[[task_id, task_info, status], [ts1], [ts2]]]
+        # Unwrap the outer array to get [[task_id, task_info, status], [ts1], [ts2]]
+        if isinstance(result[0], list) and len(result[0]) > 0 and isinstance(result[0][0], list):
+            result = result[0]
+
+        # Result may contain multiple research tasks - find the most recent/active one
+        research_tasks = []
+
+        for task_data in result:
+            if not isinstance(task_data, list) or len(task_data) < 3:
+                continue
+
+            task_id = task_data[0]
+            task_info = task_data[1] if len(task_data) > 1 else None
+
+            # Skip timestamp arrays (task_id should be a UUID string, not an int)
+            if not isinstance(task_id, str):
+                continue
+
+            if not task_info or not isinstance(task_info, list):
+                continue
+
+            # Parse task info structure:
+            # [notebook_id, [query, source_type], mode, [[sources], summary], status]
+            # Note: status is at task_info[4], NOT task_data[2] (which is a timestamp)
+            query_info = task_info[1] if len(task_info) > 1 else None
+            research_mode = task_info[2] if len(task_info) > 2 else None
+            sources_and_summary = task_info[3] if len(task_info) > 3 else []
+            status_code = task_info[4] if len(task_info) > 4 else None
+
+            query_text = query_info[0] if query_info and len(query_info) > 0 else ""
+            source_type = query_info[1] if query_info and len(query_info) > 1 else 1
+
+            # Extract sources_data and summary from bundled array [[sources], summary]
+            sources_data = []
+            summary = ""
+            if isinstance(sources_and_summary, list) and len(sources_and_summary) >= 2:
+                sources_data = sources_and_summary[0] if isinstance(sources_and_summary[0], list) else []
+                summary = sources_and_summary[1] if isinstance(sources_and_summary[1], str) else ""
+
+            # Parse sources - sources_data should be [[url, title, desc, type], ...]
+            sources = []
+            if isinstance(sources_data, list) and len(sources_data) > 0:
+                for idx, src in enumerate(sources_data):
+                    if isinstance(src, list) and len(src) >= 3:
+                        url = src[0] if isinstance(src[0], str) else ""
+                        title = src[1] if isinstance(src[1], str) else ""
+                        desc = src[2] if isinstance(src[2], str) else ""
+                        result_type = src[3] if len(src) > 3 and isinstance(src[3], int) else 1
+
+                        sources.append({
+                            "index": idx,
+                            "url": url,
+                            "title": title,
+                            "description": desc,
+                            "result_type": result_type,
+                            "result_type_name": self._get_result_type_name(result_type),
+                        })
+
+            # Determine status (1 = in_progress, 2 = completed)
+            status = "completed" if status_code == 2 else "in_progress"
+
+            research_tasks.append({
+                "task_id": task_id,
+                "status": status,
+                "query": query_text,
+                "source_type": "web" if source_type == 1 else "drive",
+                "mode": "deep" if research_mode == 5 else "fast",
+                "sources": sources,
+                "source_count": len(sources),
+                "summary": summary,
+            })
+
+        if not research_tasks:
+            return {"status": "no_research", "message": "No active research found"}
+
+        # Return the most recent (first) task
+        return research_tasks[0]
+
+    @staticmethod
+    def _get_result_type_name(result_type: int) -> str:
+        """Convert research result type to human-readable name."""
+        type_names = {
+            1: "web",
+            2: "google_doc",
+            3: "google_slides",
+            5: "deep_report",
+            8: "google_sheets",
+        }
+        return type_names.get(result_type, "unknown")
+
+    def import_research_sources(
+        self,
+        notebook_id: str,
+        task_id: str,
+        sources: list[dict],
+    ) -> list[dict]:
+        """Import research sources into the notebook.
+
+        Args:
+            notebook_id: The notebook UUID
+            task_id: The research task ID from start_research
+            sources: List of source dicts from poll_research to import
+                     Each dict should have: url, title, result_type
+
+        Returns:
+            List of created source dicts with id and title
+        """
+        if not sources:
+            return []
+
+        client = self._get_client()
+
+        # Build source array for import
+        # Web source: [null, null, ["url", "title"], null, null, null, null, null, null, null, 2]
+        # Drive source: Extract doc_id from URL and use different structure
+        source_array = []
+
+        for src in sources:
+            url = src.get("url", "")
+            title = src.get("title", "Untitled")
+            result_type = src.get("result_type", 1)
+
+            if result_type == 1:
+                # Web source
+                source_data = [None, None, [url, title], None, None, None, None, None, None, None, 2]
+            else:
+                # Drive source - extract document ID from URL
+                # URL format: https://drive.google.com/a/redhat.com/open?id=<doc_id>
+                doc_id = None
+                if "id=" in url:
+                    doc_id = url.split("id=")[-1].split("&")[0]
+
+                if doc_id:
+                    # Determine MIME type from result_type
+                    mime_types = {
+                        2: "application/vnd.google-apps.document",
+                        3: "application/vnd.google-apps.presentation",
+                        8: "application/vnd.google-apps.spreadsheet",
+                    }
+                    mime_type = mime_types.get(result_type, "application/vnd.google-apps.document")
+                    # Drive source structure: [[doc_id, mime_type, 1, title], null x9, 2]
+                    # The 1 at position 2 and trailing 2 are required for Drive sources
+                    source_data = [[doc_id, mime_type, 1, title], None, None, None, None, None, None, None, None, None, 2]
+                else:
+                    # Fallback to web-style import
+                    source_data = [None, None, [url, title], None, None, None, None, None, None, None, 2]
+
+            source_array.append(source_data)
+
+        # Import params: [null, [1], "task_id", "notebook_id", [sources]]
+        # Note: source_array is already [source1, source2, ...], don't double-wrap
+        params = [None, [1], task_id, notebook_id, source_array]
+        body = self._build_request_body(self.RPC_IMPORT_RESEARCH, params)
+        url = self._build_url(self.RPC_IMPORT_RESEARCH, f"/notebook/{notebook_id}")
+
+        response = client.post(url, content=body)
+        response.raise_for_status()
+
+        parsed = self._parse_response(response.text)
+        result = self._extract_rpc_result(parsed, self.RPC_IMPORT_RESEARCH)
+
+        imported_sources = []
+        if result and isinstance(result, list):
+            # Response is wrapped: [[source1, source2, ...]]
+            # Unwrap if first element is a list of lists (sources array)
+            if (
+                len(result) > 0
+                and isinstance(result[0], list)
+                and len(result[0]) > 0
+                and isinstance(result[0][0], list)
+            ):
+                result = result[0]
+
+            for src_data in result:
+                if isinstance(src_data, list) and len(src_data) >= 2:
+                    src_id = src_data[0][0] if src_data[0] and isinstance(src_data[0], list) else None
+                    src_title = src_data[1] if len(src_data) > 1 else "Untitled"
+                    if src_id:
+                        imported_sources.append({"id": src_id, "title": src_title})
+
+        return imported_sources
 
     def close(self) -> None:
         """Close the HTTP client."""

@@ -43,7 +43,19 @@ extracted from the page when needed.
 - notebook_query: Ask questions about notebook sources
 - source_list_drive: List all sources with types and check Drive freshness
 - source_sync_drive: Sync stale Drive sources (REQUIRES user confirmation)
+- research_start: Start Web or Drive research to discover sources
+- research_status: Check research progress and get results
+- research_import: Import discovered sources into notebook
 - save_auth_tokens: Save cookies for authentication
+
+## Research Feature
+
+To discover and import sources automatically:
+1. Call research_start(query, source, mode) - starts research
+   - source: "web" or "drive"
+   - mode: "fast" (~10 sources, 30s) or "deep" (~40 sources, 3-5min, web only)
+2. Call research_status(notebook_id) - poll until status="completed"
+3. Call research_import(notebook_id, task_id) - import all or selected sources
 
 ## Syncing Drive Sources
 
@@ -554,6 +566,245 @@ def source_sync_drive(
                 "failed": failed_count,
             },
             "results": results,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@mcp.tool()
+def research_start(
+    query: str,
+    source: str = "web",
+    mode: str = "fast",
+    notebook_id: str | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Start a research session to discover sources.
+
+    This tool searches the web or your Google Drive for relevant sources
+    based on a query. Use research_status to check progress and get results.
+
+    Args:
+        query: The search query (e.g., "kubernetes best practices 2025")
+        source: Where to search - "web" (public internet) or "drive" (your Google Drive)
+        mode: Research depth - "fast" (~10 sources, 30 seconds) or "deep" (~40 sources, 3-5 minutes)
+              Note: "deep" mode only works with source="web"
+        notebook_id: Optional existing notebook ID. If not provided, a new notebook is created.
+        title: Optional title for new notebook. Used only if notebook_id is not provided.
+               If neither notebook_id nor title is provided, notebook is titled "Research: <query>"
+
+    Returns:
+        Dictionary with task_id, notebook_id, and research info
+    """
+    try:
+        client = get_client()
+
+        # Validate mode + source combination early
+        if mode.lower() == "deep" and source.lower() == "drive":
+            return {
+                "status": "error",
+                "error": "Deep Research only supports Web sources. Use mode='fast' for Drive.",
+            }
+
+        # Create notebook if needed
+        if not notebook_id:
+            notebook_title = title or f"Research: {query[:50]}"
+            notebook = client.create_notebook(title=notebook_title)
+            if not notebook:
+                return {"status": "error", "error": "Failed to create notebook"}
+            notebook_id = notebook.id
+            created_notebook = True
+        else:
+            created_notebook = False
+
+        # Start research
+        result = client.start_research(
+            notebook_id=notebook_id,
+            query=query,
+            source=source,
+            mode=mode,
+        )
+
+        if result:
+            response = {
+                "status": "success",
+                "task_id": result["task_id"],
+                "notebook_id": notebook_id,
+                "notebook_url": f"https://notebooklm.google.com/notebook/{notebook_id}",
+                "query": query,
+                "source": result["source"],
+                "mode": result["mode"],
+                "created_notebook": created_notebook,
+            }
+
+            # Add helpful message based on mode
+            if result["mode"] == "deep":
+                response["message"] = (
+                    "Deep Research started. This takes 3-5 minutes. "
+                    "Call research_status to check progress."
+                )
+            else:
+                response["message"] = (
+                    "Fast Research started. This takes about 30 seconds. "
+                    "Call research_status to check progress."
+                )
+
+            return response
+
+        return {"status": "error", "error": "Failed to start research"}
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@mcp.tool()
+def research_status(
+    notebook_id: str,
+    poll_interval: int = 30,
+    max_wait: int = 300,
+) -> dict[str, Any]:
+    """Check research progress and get results.
+
+    Call this after research_start to check if research is complete
+    and to get the list of discovered sources.
+
+    This tool has built-in polling with sleep to reduce API token usage.
+    By default, it will poll every 30 seconds for up to 5 minutes.
+
+    Args:
+        notebook_id: The notebook UUID (from research_start response)
+        poll_interval: Seconds to wait between polls (default: 30)
+        max_wait: Maximum seconds to wait for completion (default: 300 = 5 minutes).
+                  Set to 0 for a single immediate poll without waiting.
+
+    Returns:
+        Dictionary with status, sources list, and summary when complete
+    """
+    import time
+
+    try:
+        client = get_client()
+        start_time = time.time()
+        polls = 0
+
+        while True:
+            polls += 1
+            result = client.poll_research(notebook_id)
+
+            if not result:
+                return {"status": "error", "error": "Failed to poll research status"}
+
+            # If completed or no research found, return immediately
+            if result.get("status") in ("completed", "no_research"):
+                result["polls_made"] = polls
+                result["wait_time_seconds"] = round(time.time() - start_time, 1)
+                return {
+                    "status": "success",
+                    "research": result,
+                }
+
+            # Check if we should stop waiting
+            elapsed = time.time() - start_time
+            if max_wait == 0 or elapsed >= max_wait:
+                result["polls_made"] = polls
+                result["wait_time_seconds"] = round(elapsed, 1)
+                result["message"] = (
+                    f"Research still in progress after {round(elapsed, 1)}s. "
+                    f"Call research_status again to continue waiting."
+                )
+                return {
+                    "status": "success",
+                    "research": result,
+                }
+
+            # Wait before next poll
+            time.sleep(poll_interval)
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@mcp.tool()
+def research_import(
+    notebook_id: str,
+    task_id: str,
+    source_indices: list[int] | None = None,
+) -> dict[str, Any]:
+    """Import discovered sources into the notebook.
+
+    Call this after research_status shows status="completed" to import
+    the discovered sources.
+
+    Args:
+        notebook_id: The notebook UUID
+        task_id: The research task ID (from research_start or research_status)
+        source_indices: Optional list of source indices to import (0-based).
+                       If not provided, imports ALL discovered sources.
+
+    Returns:
+        Dictionary with imported source count and IDs
+    """
+    try:
+        client = get_client()
+
+        # First, get the current research results to get source details
+        poll_result = client.poll_research(notebook_id)
+
+        if not poll_result or poll_result.get("status") == "no_research":
+            return {
+                "status": "error",
+                "error": "No research found for this notebook. Run research_start first.",
+            }
+
+        if poll_result.get("status") != "completed":
+            return {
+                "status": "error",
+                "error": f"Research is still in progress (status: {poll_result.get('status')}). "
+                         "Wait for completion before importing.",
+            }
+
+        # Get sources from poll result
+        all_sources = poll_result.get("sources", [])
+
+        if not all_sources:
+            return {
+                "status": "error",
+                "error": "No sources found in research results.",
+            }
+
+        # Filter sources by indices if specified
+        if source_indices is not None:
+            sources_to_import = []
+            invalid_indices = []
+            for idx in source_indices:
+                if 0 <= idx < len(all_sources):
+                    sources_to_import.append(all_sources[idx])
+                else:
+                    invalid_indices.append(idx)
+
+            if invalid_indices:
+                return {
+                    "status": "error",
+                    "error": f"Invalid source indices: {invalid_indices}. "
+                             f"Valid range is 0-{len(all_sources)-1}.",
+                }
+        else:
+            sources_to_import = all_sources
+
+        # Import the sources
+        imported = client.import_research_sources(
+            notebook_id=notebook_id,
+            task_id=task_id,
+            sources=sources_to_import,
+        )
+
+        return {
+            "status": "success",
+            "imported_count": len(imported),
+            "total_available": len(all_sources),
+            "sources": imported,
+            "notebook_url": f"https://notebooklm.google.com/notebook/{notebook_id}",
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
