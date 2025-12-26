@@ -35,6 +35,8 @@ extracted from the page when needed.
 - notebook_list: List all notebooks
 - notebook_create: Create a new notebook
 - notebook_get: Get notebook details with sources
+- notebook_describe: Get AI-generated summary of what a notebook is about
+- source_describe: Get AI-generated summary and keyword chips for a specific source
 - notebook_rename: Rename a notebook
 - chat_configure: Configure chat goal/style and response length
 - notebook_delete: Delete a notebook (REQUIRES user confirmation)
@@ -258,6 +260,64 @@ def notebook_get(notebook_id: str) -> dict[str, Any]:
             "notebook": result,
             "created_at": created_at,
             "modified_at": modified_at,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@mcp.tool()
+def notebook_describe(notebook_id: str) -> dict[str, Any]:
+    """Get an AI-generated summary of what a notebook is about.
+
+    This returns NotebookLM's auto-generated description that appears in the Chat panel,
+    along with suggested report topics based on the notebook's sources.
+
+    Args:
+        notebook_id: The notebook UUID
+
+    Returns:
+        Dictionary with:
+        - status: "success" or "error"
+        - summary: AI-generated markdown summary with key themes highlighted
+        - suggested_topics: List of suggested report topics, each with:
+            - question: The topic as a question
+            - prompt: Full prompt for generating a report on this topic
+    """
+    try:
+        client = get_client()
+        result = client.get_notebook_summary(notebook_id)
+
+        return {
+            "status": "success",
+            **result,  # Includes summary and suggested_topics
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@mcp.tool()
+def source_describe(source_id: str) -> dict[str, Any]:
+    """Get an AI-generated summary and keyword chips for a specific source.
+
+    This is the "Source Guide" feature shown when clicking on a source in NotebookLM.
+    Provides a concise AI summary with bold keywords and topic chips.
+
+    Args:
+        source_id: The source UUID
+
+    Returns:
+        Dictionary with:
+        - status: "success" or "error"
+        - summary: AI-generated markdown summary with **bold** keywords
+        - keywords: List of keyword chip strings (topics)
+    """
+    try:
+        client = get_client()
+        result = client.get_source_guide(source_id)
+
+        return {
+            "status": "success",
+            **result,  # Includes summary and keywords
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}

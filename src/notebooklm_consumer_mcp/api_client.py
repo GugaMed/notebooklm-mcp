@@ -147,6 +147,8 @@ class ConsumerNotebookLMClient:
     RPC_PREFERENCES = "hT54vc"
     RPC_SUBSCRIPTION = "ozz5Z"
     RPC_SETTINGS = "ZwVcOc"
+    RPC_GET_SUMMARY = "VfAZjd"  # Get notebook summary and suggested report topics
+    RPC_GET_SOURCE_GUIDE = "tr032e"  # Get source guide (AI summary + keyword chips)
 
     # Research RPCs (source discovery)
     RPC_START_FAST_RESEARCH = "Ljjv0c"  # Start Fast Research (Web or Drive)
@@ -591,6 +593,104 @@ class ConsumerNotebookLMClient:
         result = self._extract_rpc_result(parsed, self.RPC_GET_NOTEBOOK)
 
         return result
+
+    def get_notebook_summary(self, notebook_id: str) -> dict[str, Any]:
+        """Get AI-generated summary and suggested report topics for a notebook.
+
+        Args:
+            notebook_id: The notebook UUID
+
+        Returns:
+            Dict with:
+            - summary: AI-generated notebook summary (markdown formatted)
+            - suggested_topics: List of dicts with 'question' and 'prompt' keys
+        """
+        client = self._get_client()
+
+        # Params: [notebook_id, [2]]
+        params = [notebook_id, [2]]
+        body = self._build_request_body(self.RPC_GET_SUMMARY, params)
+        url = self._build_url(self.RPC_GET_SUMMARY, f"/notebook/{notebook_id}")
+
+        response = client.post(url, content=body)
+        response.raise_for_status()
+
+        parsed = self._parse_response(response.text)
+        result = self._extract_rpc_result(parsed, self.RPC_GET_SUMMARY)
+
+        # Extract summary and topics
+        summary = ""
+        suggested_topics = []
+
+        if result and isinstance(result, list):
+            # Summary is at result[0][0]
+            if len(result) > 0 and isinstance(result[0], list) and len(result[0]) > 0:
+                summary = result[0][0]
+
+            # Suggested topics are at result[1][0]
+            if len(result) > 1 and result[1]:
+                topics_data = result[1][0] if isinstance(result[1], list) and len(result[1]) > 0 else []
+                for topic in topics_data:
+                    if isinstance(topic, list) and len(topic) >= 2:
+                        suggested_topics.append({
+                            "question": topic[0],
+                            "prompt": topic[1],
+                        })
+
+        return {
+            "summary": summary,
+            "suggested_topics": suggested_topics,
+        }
+
+    def get_source_guide(self, source_id: str) -> dict[str, Any]:
+        """Get AI-generated summary and keyword chips for a specific source.
+
+        This is the "Source Guide" feature shown when clicking on a source in NotebookLM.
+
+        Args:
+            source_id: The source UUID
+
+        Returns:
+            Dict with:
+            - summary: AI-generated summary with **bold** markdown keywords
+            - keywords: List of keyword chip strings
+        """
+        client = self._get_client()
+
+        # Params: [[[[source_id]]]]  - Deeply nested source ID
+        params = [[[[source_id]]]]
+        body = self._build_request_body(self.RPC_GET_SOURCE_GUIDE, params)
+        url = self._build_url(self.RPC_GET_SOURCE_GUIDE, "/")
+
+        response = client.post(url, content=body)
+        response.raise_for_status()
+
+        parsed = self._parse_response(response.text)
+        result = self._extract_rpc_result(parsed, self.RPC_GET_SOURCE_GUIDE)
+
+        # Extract summary and keywords
+        summary = ""
+        keywords = []
+
+        if result and isinstance(result, list):
+            # Result structure: [[[null, [summary], [[keywords]], []]]]
+            # Need to go TWO levels deep to get to the actual data
+            if len(result) > 0 and isinstance(result[0], list):
+                if len(result[0]) > 0 and isinstance(result[0][0], list):
+                    inner = result[0][0]
+
+                    # Extract summary from position 1
+                    if len(inner) > 1 and isinstance(inner[1], list) and len(inner[1]) > 0:
+                        summary = inner[1][0]
+
+                    # Extract keywords from position 2
+                    if len(inner) > 2 and isinstance(inner[2], list) and len(inner[2]) > 0:
+                        keywords = inner[2][0] if isinstance(inner[2][0], list) else []
+
+        return {
+            "summary": summary,
+            "keywords": keywords,
+        }
 
     def create_notebook(self, title: str = "") -> ConsumerNotebook | None:
         """Create a new notebook.

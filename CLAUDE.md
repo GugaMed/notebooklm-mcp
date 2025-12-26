@@ -186,6 +186,7 @@ The `f.req` structure:
 | `cFji9` | List Mind Maps | `[notebook_id]` |
 | `ciyUvf` | Get Suggested Report Formats | `[[2], notebook_id, [[source_id1], ...]]` |
 | `VfAZjd` | Get Report Suggestions | `[notebook_id, [2]]` |
+| `tr032e` | Get Source Guide | `[[[["source_id"]]]]` |
 
 ### `s0tc2d` - Notebook Update RPC
 
@@ -696,16 +697,69 @@ params = [[2], notebook_id, [[source_id1], [source_id2], ...]]
 ]
 ```
 
-#### `VfAZjd` - Get Report Suggestions (Summary)
+#### `VfAZjd` - Get Notebook Summary and Report Suggestions
 
-Returns notebook summary and suggested report topics.
+Returns an AI-generated summary of the notebook and suggested report topics.
 
 ```python
 # Request params
 [notebook_id, [2]]
 
-# Response includes summary and suggested topics
+# Response structure
+[
+    [
+        "The provided documents explore...",  # AI-generated summary (markdown formatted)
+    ],
+    [
+        [
+            [
+                "How do generative AI tools...",  # Suggested topic question
+                "Create a detailed briefing..."   # Full prompt for report
+            ],
+            # ... more suggested topics
+        ]
+    ]
+]
 ```
+
+**Summary format:** Markdown text with **bold** keywords highlighting key themes.
+
+**Use case:** This RPC provides the notebook description shown in the Chat panel when you first open a notebook. Perfect for a `notebook_describe` tool to give users a high-level overview of what a notebook contains.
+
+#### `tr032e` - Get Source Guide
+
+Generates an AI summary and keyword chips for a specific source. This is the "Source Guide" feature shown when clicking on a source in the NotebookLM UI.
+
+```python
+# Request params
+params = [[[["source_id"]]]]
+# Source ID in deeply nested arrays
+
+# Example
+params = [[[["5d318300-1b66-4bf6-ad3a-072c76f8a8eb"]]]]
+
+# Response structure
+[
+    [
+        null,
+        [
+            "This facilitator's guide outlines a specialized workshop designed to help **medical residents and fellows** leverage **generative artificial intelligence**..."
+            # AI-generated summary with **bold** markdown for keywords
+        ],
+        [
+            ["Medical education", "Generative AI tools", "Resident teaching skills", "Educational content creation", "Ethics and risks"]
+            # Array of keyword chips
+        ],
+        []
+    ]
+]
+```
+
+**Response fields:**
+- `[0][1][0]`: AI-generated summary (markdown formatted with **bold** keywords)
+- `[0][2][0]`: Array of keyword chip strings
+
+**Use case:** Perfect for a `source_describe` tool that provides an AI-generated overview of individual sources, similar to `notebook_describe` for notebooks.
 
 ### Flashcard RPCs
 
@@ -895,6 +949,8 @@ Retrieves all existing mind maps for a notebook.
 | `notebook_list` | List all notebooks |
 | `notebook_create` | Create new notebook |
 | `notebook_get` | Get notebook details |
+| `notebook_describe` | Get AI-generated summary of notebook content with keywords |
+| `source_describe` | Get AI-generated summary and keyword chips for a source |
 | `notebook_rename` | Rename a notebook |
 | `chat_configure` | Configure chat goal/style and response length |
 | `notebook_delete` | Delete a notebook (REQUIRES confirmation) |

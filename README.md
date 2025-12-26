@@ -11,6 +11,8 @@ An MCP server for **Consumer NotebookLM** (notebooklm.google.com) - the free/per
 | `notebook_list` | List all notebooks |
 | `notebook_create` | Create a new notebook |
 | `notebook_get` | Get notebook details with sources |
+| `notebook_describe` | Get AI-generated summary of notebook content |
+| `source_describe` | Get AI-generated summary and keywords for a source |
 | `notebook_rename` | Rename a notebook |
 | `chat_configure` | Configure chat goal/style and response length |
 | `notebook_delete` | Delete a notebook (requires confirmation) |
@@ -172,6 +174,20 @@ chat_configure(
 
 **Goal Options:** default, custom (requires custom_prompt), learning_guide
 **Response Lengths:** default, longer, shorter
+
+### Get AI Summaries
+
+```python
+# Get AI-generated summary of what a notebook is about
+summary = notebook_describe(notebook_id)
+print(summary["summary"])  # Markdown with **bold** keywords
+print(summary["suggested_topics"])  # Suggested report topics
+
+# Get AI-generated summary of a specific source
+source_info = source_describe(source_id)
+print(source_info["summary"])  # AI summary with **bold** keywords
+print(source_info["keywords"])  # Topic chips: ["Medical education", "AI tools", ...]
+```
 
 ### Sync Stale Drive Sources
 ```python
