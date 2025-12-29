@@ -103,11 +103,13 @@ No environment variables needed - the MCP uses cached tokens from `~/.notebooklm
 
 Use the built-in CLI command to add the MCP server:
 
+**Add for all projects (recommended):**
 ```bash
-# Add for all projects (recommended)
 claude mcp add --scope user notebooklm-consumer notebooklm-consumer-mcp
+```
 
-# Or add for current project only
+**Or add for current project only:**
+```bash
 claude mcp add notebooklm-consumer notebooklm-consumer-mcp
 ```
 
