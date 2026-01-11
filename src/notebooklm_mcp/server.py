@@ -504,7 +504,12 @@ def source_list_drive(notebook_id: str) -> dict[str, Any]:
             },
             "syncable_sources": syncable_sources,
             "other_sources": [
-                {"id": s["id"], "title": s["title"], "type": s["source_type_name"]}
+                {
+                    "id": s["id"],
+                    "title": s["title"],
+                    "type": s["source_type_name"],
+                    "url": s.get("url"),
+                }
                 for s in other_sources
             ],
         }
@@ -1715,31 +1720,7 @@ def mind_map_create(
         return {"status": "error", "error": str(e)}
 
 
-@mcp.tool()
-def mind_map_list(notebook_id: str) -> dict[str, Any]:
-    """List all mind maps in a notebook.
 
-    Args:
-        notebook_id: Notebook UUID
-    """
-    try:
-        client = get_client()
-        mind_maps = client.list_mind_maps(notebook_id)
-
-        return {
-            "status": "success",
-            "count": len(mind_maps),
-            "mind_maps": [
-                {
-                    "mind_map_id": mm.get("mind_map_id"),
-                    "title": mm.get("title", "Untitled"),
-                    "created_at": mm.get("created_at"),
-                }
-                for mm in mind_maps
-            ],
-        }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
 
 
 # Essential cookies for NotebookLM API authentication

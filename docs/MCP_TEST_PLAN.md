@@ -1,6 +1,6 @@
 # NotebookLM MCP - Comprehensive Test Plan
 
-**Purpose:** Verify all 31 MCP tools work correctly after optimization.
+**Purpose:** Verify all 30 MCP tools work correctly after optimization.
 
 **Prerequisites:**
 - MCP server installed: `uv cache clean && uv tool install --force .`
@@ -30,7 +30,7 @@ Your AI assistant will:
 
 ### Benefits of Automation
 
-- ✅ **Faster testing** - Complete all 31 tools in minutes instead of hours
+- ✅ **Faster testing** - Complete all 30 tools in minutes instead of hours
 - ✅ **Consistent validation** - Every tool tested the same way each time
 - ✅ **Full coverage** - No skipped tests or missed edge cases
 - ✅ **Interactive verification** - AI pauses for critical validations (like Drive sync)
@@ -505,17 +505,7 @@ Show settings first.
 
 ---
 
-### Test 7.2 - List Mind Maps
-**Tool:** `mind_map_list`
 
-**Prompt:**
-```
-List all mind maps in notebook [notebook_id].
-```
-
-**Expected:** List showing the mind map created in Test 7.1.
-
----
 
 ## Test Group 8: Drive Sync (Optional)
 
@@ -597,7 +587,7 @@ I confirm. Delete it with confirm=True.
 
 After completing all tests, verify:
 
-- [ ] All 28 tools executed without errors
+- [ ] All 30 tools executed without errors
 - [ ] Tools requiring confirmation properly blocked without confirm=True
 - [ ] All create operations returned valid IDs
 - [ ] All status checks returned expected structures
@@ -624,11 +614,11 @@ After completing all tests, verify:
 
 **Studio Other (6):** infographic_create, slide_deck_create, report_create, flashcards_create, quiz_create, data_table_create
 
-**Mind Maps (2):** mind_map_create, mind_map_list
+**Mind Maps (1):** mind_map_create
 
 **Cleanup (1):** notebook_delete
 
-**Total: 31 tools**
+**Total: 30 tools**
 
 ---
 
@@ -662,7 +652,7 @@ Use these prompts sequentially with another AI tool that has access to the MCP:
 24. `Create Briefing Doc report for notebook [id] (show settings first)`
 25. `Create medium difficulty flashcards for notebook [id] (show settings first)`
 26. `Create mind map titled "AI Concepts" for notebook [id] (show settings first)`
-27. `List all mind maps in notebook [id]`
+
 28. `Check deep research status for notebook [id]` ← **By now, deep research should be complete**
 29. `Verify source_count > 0 and report field has content`
 30. `Import all deep research sources into notebook [id]`

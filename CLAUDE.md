@@ -123,7 +123,7 @@ src/notebooklm_mcp/
 | `quiz_create` | Generate interactive quizzes (REQUIRES confirmation) |
 | `data_table_create` | Generate data tables from sources (REQUIRES confirmation) |
 | `mind_map_create` | Generate and save mind maps (REQUIRES confirmation) |
-| `mind_map_list` | List all mind maps in a notebook |
+
 | `studio_status` | Check studio artifact generation status |
 | `studio_delete` | Delete studio artifacts (REQUIRES confirmation) |
 | `save_auth_tokens` | Save tokens extracted via Chrome DevTools MCP |

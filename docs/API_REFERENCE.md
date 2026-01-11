@@ -79,6 +79,7 @@ print(source_info["keywords"])  # Topic chips: ["Medical education", "AI tools",
 content = source_get_content(source_id)
 print(content["title"])        # Source title
 print(content["source_type"])  # pdf, web_page, youtube, pasted_text, google_docs, etc.
+print(content["url"])          # Source URL (if available)
 print(content["char_count"])   # Character count
 print(content["content"])      # Full raw text
 

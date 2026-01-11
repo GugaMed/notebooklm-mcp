@@ -1037,11 +1037,19 @@ class NotebookLMClient:
                             self.SOURCE_TYPE_GOOGLE_OTHER,
                         )
 
+                        # Extract URL if available (position 7)
+                        url = None
+                        if isinstance(metadata, list) and len(metadata) > 7:
+                            url_info = metadata[7]
+                            if isinstance(url_info, list) and len(url_info) > 0:
+                                url = url_info[0]
+
                         sources.append({
                             "id": source_id,
                             "title": title,
                             "source_type": source_type,
                             "source_type_name": self._get_source_type_name(source_type),
+                            "url": url,
                             "drive_doc_id": drive_doc_id,
                             "can_sync": can_sync,  # True for Drive docs AND Gemini Notes
                         })

@@ -40,6 +40,9 @@ htmlcov/
 .DS_Store
 *.log
 
+# Credentials
+cookies.txt
+
 # uv
 .uv/
 uv.lock
@@ -52,3 +55,4 @@ CLAUDE.local.md
 
 # Auto Claude data directory
 .auto-claude/
+.worktrees/

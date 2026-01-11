@@ -142,3 +142,50 @@ class TestNotebookLMClientAuth:
             
             with pytest.raises(ValueError, match="Authentication expired"):
                 original_method(mock_client)
+
+    def test_get_notebook_sources_extracts_url(self, mock_client):
+        """Test that get_notebook_sources_with_types extracts URL from metadata."""
+        
+        # Structure based on my analysis of the real response:
+        # Source structure: [[id], title, metadata, [null, 2]]
+        # Metadata: [..., ..., ..., ..., type, ..., ..., [url]]
+        
+        # Metadata mock:
+        # 0=doc_id, 1=len, 2=?, 3=?, 4=type(5=web), 5, 6, 7=[url]
+        metadata = [
+            None, 
+            331, 
+            [], 
+            [], 
+            5,  # type=web_page
+            None, 
+            1, 
+            ["https://example.com/test_doc"]  # URL at pos 7
+        ]
+        
+        # Source item
+        source_item = [
+            ["source_uuid"], 
+            "Test Source Title", 
+            metadata, 
+            [None, 2]
+        ]
+        
+        # Notebook response structure for get_notebook
+        # The method calls get_notebook which calls _call_rpc
+        # get_notebook returns: [["nb_title", [source_list], ...]]
+        
+        notebook_response = [[
+            "Analysis Notebook",
+            [source_item],
+            "nb_uuid",
+            # ... other fields ignored
+        ]]
+        
+        with patch.object(mock_client, 'get_notebook', return_value=notebook_response):
+            sources = mock_client.get_notebook_sources_with_types("nb_uuid")
+            
+            assert len(sources) == 1
+            assert sources[0]["title"] == "Test Source Title"
+            assert sources[0]["url"] == "https://example.com/test_doc"
+            assert sources[0]["source_type_name"] == "web_page"

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-01-10
+
+### Fixed
+- Fixed URL source retrieval by implementing correct metadata parsing in `get_notebook_sources_with_types`
+- Added fallback for finding source type name in `get_notebook_sources_with_types`
+
 ## [0.1.6] - 2026-01-11
 
 ### Added
