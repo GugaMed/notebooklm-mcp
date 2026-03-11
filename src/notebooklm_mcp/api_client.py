@@ -1253,14 +1253,26 @@ class NotebookLMClient:
             response = client.post(url, content=body)
             response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (401, 403):
+            if e.response.status_code not in (401, 403):
+                raise
+            # Layer 1: refresh CSRF/session tokens
+            try:
                 self._refresh_auth_tokens()
                 self._client = None
                 client = self._get_client()
                 response = client.post(url, content=body)
                 response.raise_for_status()
-            else:
-                raise
+            except (httpx.HTTPStatusError, ValueError):
+                # Layer 2: reload from disk or run headless auth
+                if self._try_reload_or_headless_auth():
+                    self._client = None
+                    client = self._get_client()
+                    response = client.post(url, content=body)
+                    response.raise_for_status()
+                else:
+                    raise AuthenticationError(
+                        "Authentication expired. Run 'notebooklm-mcp-auth' in your terminal to re-authenticate."
+                    )
 
         # Parse streaming response
         answer_text = self._parse_query_response(response.text)
