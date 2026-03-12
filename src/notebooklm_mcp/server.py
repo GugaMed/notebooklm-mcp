@@ -816,8 +816,8 @@ def research_status(
             if not result:
                 # If specific task requested but not found, keep waiting (it might appear)
                 if task_id:
-                     time.sleep(poll_interval)
-                     continue
+                    time.sleep(poll_interval)
+                    continue
                 return {"status": "error", "error": "Failed to poll research status"}
 
             # If completed or no research found, return immediately
